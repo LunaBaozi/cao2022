@@ -1,0 +1,85 @@
+
+
+<ROSETTASCRIPTS>
+    <SCOREFXNS>
+        <ScoreFunction name="sfxn" weights="beta_nov16" />
+        <ScoreFunction name="sfxn_cart" weights="beta_nov16_cart" />
+        <ScoreFunction name="sfxn_none" weights="none" />
+    </SCOREFXNS>
+    <RESIDUE_SELECTORS>
+        <Chain name="chainA" chains="A"/>
+        <Chain name="chainB" chains="B"/>
+
+        <ResiduePDBInfoHasLabel name="mutation_res" property="MUT" />
+
+        <Neighborhood name="neighborhood" selector="mutation_res" include_focus_in_subset="true" distance="10"/>
+        <Not name="not_neighborhood" selector="neighborhood" />
+
+        # This is terrible
+        # Want to minimize backbone for directional + (+- 3 residues) on chainA
+        # Want to minimize chi for ^^ and directional on chain B
+
+        <PrimarySequenceNeighborhood name="primary_near_mut" selector="mutation_res" lower="3" upper="3" />
+        <Or name="fr_chi_min" selectors="neighborhood,primary_near_mut" />
+
+        <And name="fr_bb_min" selectors="fr_chi_min,chainA" />
+
+        <And name="fr_chi_not_bb_min" selectors="fr_chi_min">
+            <Not selector="fr_bb_min" />
+        </And>
+
+        <Not name="not_any_min" selector="fr_chi_min" />
+
+    </RESIDUE_SELECTORS>
+    
+
+    <TASKOPERATIONS>        
+        <IncludeCurrent name="current" />
+        <LimitAromaChi2 name="limitchi2" chi2max="110" chi2min="70" include_trp="True" />
+        <ExtraRotamersGeneric name="ex1_ex2" ex1="1" ex2aro="1" />
+
+        <OperateOnResidueSubset name="restrict_not_neighborhood" selector="not_neighborhood">
+            <PreventRepackingRLT/>
+        </OperateOnResidueSubset>
+
+    </TASKOPERATIONS>
+    <MOVERS>
+        <SwitchChainOrder name="chain1only" chain_order="1" />
+        <SwitchChainOrder name="chain2only" chain_order="2" />
+
+    </MOVERS>
+    <FILTERS>
+
+        <ScoreType name="total_score" scorefxn="sfxn" score_type="total_score" threshold="0" confidence="0" />
+        <MoveBeforeFilter name="total_score_monomer" mover="chain1only" filter="total_score" confidence="0" />
+
+        <MoveBeforeFilter name="total_score_target" mover="chain2only" filter="total_score" confidence="0" />
+
+        <Ddg name="ddg_no_repack"  threshold="-10" jump="1" repeats="1" repack="0" confidence="0" scorefxn="sfxn" />
+    </FILTERS>
+    <MOVERS>
+        <FastRelax name="FastRelaxNeighborhood" scorefxn="sfxn_cart" repeats="1" batch="false" ramp_down_constraints="false" cartesian="true" bondangle="false" bondlength="false" min_type="dfpmin_armijo_nonmonotone" task_operations="restrict_not_neighborhood,limitchi2,ex1_ex2" relaxscript="/mnt/home/bcov/sc/scaffold_comparison/relax_scripts/fast_cart.wts">
+            <MoveMap name="MM" >
+                <ResidueSelector selector="not_any_min" chi="false" bb="false" />
+                <ResidueSelector selector="fr_chi_not_bb_min" chi="true" bb="false" />
+                <ResidueSelector selector="fr_bb_min" chi="true" bb="true" />
+            </MoveMap>
+        </FastRelax>
+
+    </MOVERS>
+
+    <APPLY_TO_POSE>
+    </APPLY_TO_POSE>
+    <PROTOCOLS>
+
+        <Add mover="FastRelaxNeighborhood" />
+
+        <Add filter_name="ddg_no_repack" />
+        <Add filter_name="total_score_monomer" />
+        <Add filter_name="total_score_target" />
+        <Add filter_name="total_score" />
+
+
+    </PROTOCOLS>
+    <OUTPUT scorefxn="sfxn_none" />
+</ROSETTASCRIPTS>

@@ -1,0 +1,63 @@
+Information on latest monomer design best practices
+
+
+
+As time went on with making binders, it started to become clear that once a certain level of hydrophobicity is achieved, the structure-must-be-correct hypothesis of the protease treatment protocol became less valid. The HHHH_bc series scaffolds had about an 80% stability rate and several negative controls were protease stable (The most famous being where all hydrophobic residues were mutated to either poly A, V, L, or F using a text-editor. The A designs were not stable, V partially stable, L as stable as the parents, and F more stable than the parents. Modeling poly F scaffolds showed that there was no way the amino acids could fit. Most ironically was that rather than knocking out stability, a few of the poly F designs actually saved the parent scaffold. A protease unstable scaffold became stable by mutating every single hydrophobic amino acid to F.)
+
+With the limited usefulness of the protease assay (at least for helical bundles), the slow turnaround time (several months after design), and the high success rate of the HHHH_bc series (80%), it became clear that computational metrics should simply be used instead. Determining which computational metrics to use was quite a challenge, especially because some were filtered very stringently during scaffold creation.
+
+In the end, these are the metrics we use these days (the HHH_bc scaffolds all pass these and so do recommended_scaffolds.list):
+
+ss_sc > 0.8                 # secondary structure shape complementarity
+percent_core_SCN > 0.20     # % of protein that is core by sidechain neighbors. 
+                            #  Threshold is variable. Adjust it until your outputs look good. (0.15-0.25)
+                            #  (can also use average_SCN > 2.15, but this is hard to calculate in xml)
+mismatch_probability < 0.1  # Use 0.3 for beta sheets
+worst_9mer < 0.4            # Use 0.7 for beta sheets. Of all 9-aa CA windows, which has the worst RMSD match to the PDB?
+worst_9mer_helix < 0.15     # Of all 9-aa CA windows from helices, which has the worst RMSD match to the PDB?
+score_per_res < -2.4        # Pretty arbitrary. If you use cartesian FastDesign, this number should be much lower
+
+lddt > 0.9                  # DL predictions. We think this is capturing fragment quality. doi.org/10.1038/s41467-021-21511-x
+
+
+It is worth pointing out that these metrics are very, very hard to achieve. 30M backbones were designed to produce the 17,000 HHH_bc scaffolds, with around 10B backbones sampled. And 3-helical bundles are the easiest topology! Anything with a beta-sheet is going to have a really hard time on the lddt metric (notably though, native beta sheets don't score any different from native helices).
+
+
+An important note here is that avg_scn, worst9er, and worst9mer_helix don't really change after sequence design. As such, it's wise to evaluate these before you put a sequence on your design. avg_scn can be computed in milliseconds while the worst9mer terms take about 5. Filtering by some sort of backbone-backbone motif score will significantly improve your success rate (and these can be milliseconds as well).
+
+
+
+Generating backbones is up to you. See "Perturbing the energy landscape for improved packing during computational protein design" for a poor description of how the HHHH_bc and HHH_bc backbones were generated (the SEWING-like approach). We didn't include the scripts there because they were overly complicated and poorly written. However, it's a pretty easy protocol to re-invent and you can steal the helices and turns you need from the scaffolds/ folder.
+
+More complicated topologies (anything with a beta sheet) are still generated with fragment insertion. "Sampling of Structure and Sequence Space of Small Protein Folds" provides a good overview of how it's currently done (building small sections at a time).
+
+
+
+
+Once you've got your backbones, this xml will do the design work for you.
+
+$CAO_2021_PROTOCOL/paper_monomer_design.xml
+
+You'll need these flags:
+-script_vars runpsipred_single=RUNPSIPRED_SINGLE
+-indexed_structure_store:fragment_store SS_GROUPED_VALL_ALL
+-parser:script_vars CAO_2021_PROTOCOL=$CAO_2021_PROTOCOL
+
+ss_grouped_vall_all.h5 available here:
+files.ipd.uw.edu/pub/modular_repeat_protein_2020/ss_grouped_vall_all.h5
+
+Unlike interface design, monomer design critically relies on this file. Do not omit this file! 
+(Don't forget to build hdf5 Rosetta with extras=hdf5 in your scons command)
+
+
+Do not include the -dunbrack flags from the interface design. These will ruin your monomers!
+
+
+
+
+
+
+
+
+
+

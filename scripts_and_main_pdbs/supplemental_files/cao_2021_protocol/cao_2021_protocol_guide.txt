@@ -1,0 +1,702 @@
+
+
+The computational design method from Cao 2021
+
+Longxing Cao and Brian Coventry
+
+
+Available online here:
+files.ipd.uw.edu/pub/robust_de_novo_design_minibinders_2021/supplemental_files/cao_2021_protocol.tar.gz
+
+See this for rest of supplement:
+files.ipd.uw.edu/pub/robust_de_novo_design_minibinders_2021/supplemental_files/download_supplement.txt
+
+
+=========================== The method in detail ===========================
+
+Here we present a step-by-step procedure for designing binders as we have described in the methods section. This process takes a long time and will certainly require a computing cluster if one wishes to place orders of the size that were placed in this paper. A 32+ core cpu may be sufficient if one simply wants to try the method or place a small order of proteins. However, if you look at the success rate of the method, placing a small order may not be wise.
+
+
+
+==== Scale ====
+
+Depending on the number of proteins you wish to order, it is best to run this protocol at different scales. The number of calculations required to order 10 proteins is clearly different from the number required to order 100,000.
+
+A note of warning: These numbers are arbitrary and are more or less scaled based on the 100,000 order size. Even the 100,000 order size is based heavily upon the computational resources available to the authors. The defining theme though is that having more designed outputs to choose from though is always better. Ratios of at least 100:1 are recommended when ordering. (The limit of diminishing returns is probably at 10,000:1 where the filters start to lose their predictive power)
+
+Order size  RifDock Outputs FastDesign1 Motifs  MotifGraftOutputs   FastDesign2
+100000                  10M          1M  5000                 10M            1M
+10000                    3M        300K  1000                  3M          300K
+1000                   500K         50K   300                 500K          50K
+100                    100K         10K    50                 100K          10K
+10                      10K          1K    30                  10K           1K
+min                     100          10     1                  100           10
+
+Where "min" is about the smallest size you could possibly perform to test out the protocol.
+
+
+Running at the minimum settings above and with all the software ready to go. The authors were able to complete this entire protocol in about 6 hours (with distractions). It might be wise to give the protocol a quick run before you go to massive scales.
+
+
+==== Number of scaffolds ====
+
+What is the appropriate number of scaffolds to use? This is still an open question but the answer is based on how similar the scaffolds are to each other. The IL7Ra grafting experiment suggests that two 65aa 3-helical bundle are roughly equivalent at 0.3A CA RMSD.
+
+For the most part, more scaffolds is always better. The authors used 10K-20K for most of the experiments performed in this paper. Is it possible to get by with 10? Probably. However, for some targets, you may not find good matches.
+
+
+You can find all of the scaffolds we have created in the scaffolds/ folder. All of these except for the HHH_bc/ have been subjected to protease and were resistent. As time went on, we realized that being protease resistant was not a great indicator of folding accuracy and as such, these days we rely on computational metrics to do the filtering for us. See $CAO_2021_PROTOCOL/monomer_design_adendum.txt for more information.
+
+The best set of scaffolds is scaffolds/recommended_scaffolds.list which contains 22,931. If you want fewer, you can downsample that file.
+
+This command will convert the paths into full_paths:
+cd scaffolds/
+cat recommended_scaffolds.list | xargs readlink -f > full_path_recommended_scaffolds.list
+
+If you only want 1000, you can use this:
+cd scaffolds/
+cat recommended_scaffolds.list | shuf | head -n 1000 | xargs readlink -f > 1000_full_path_recommended_scaffolds.list
+
+Whichever method you chose, later on in this tutorial, it's expected that your scaffolds list is named scaffolds.list.
+
+
+==== Setup: ====
+
+In order to run this protocol from start to finish, you will need the following software:
+
+Rosetta - Throughout this text, the main/source folder will be referred to as $ROSETTA. You will need a relatively new versions (newer than December 2020). Also, you need to compile with HDF5 support. (Add extras=hdf5 to your scons command)
+DAlphaBall - Part of rosetta. Go to $ROSETTA/external/DAlpahBall and type "make". DAlphaBall.gcc will be produced.
+PyRosetta - All python scripts in protocol assume PyRosetta is installed
+PatchDock - Available online as a pre-compiled binary
+RifDock - Hard to compile. Requires a separate build of Rosetta. Available here: https://github.com/rifdock/rifdock
+silent_tools - Available here: https://github.com/bcov77/silent_tools (Also available in $CAO_2021_PROTOCOL/github_backup)
+PsiPred - After installation, you'll need to identify the location of runpsipred_single which will be referred to as RUNPSIPRED_SINGLE
+motif_clustering/cluster - Get this from here: https://github.com/LongxingCao/ppi_tools (Also available in $CAO_2021_PROTOCOL/github_backup)
+
+You'll also need this database (somewhat optional, but gives better results)
+ss_grouped_vall_all.h5 -- files.ipd.uw.edu/pub/modular_repeat_protein_2020/ss_grouped_vall_all.h5
+SS_GROUPED_VALL_ALL will refer to the full-path of this file.
+
+
+The path to cao_2021_protocol will be listed as $CAO_2021_PROTOCOL. You can save yourself some work by running this command
+export CAO_2021_PROTOCOL=/the/full/path/to/cao_2021_protocol
+
+Now bash will automatically fill $CAO_2021_PROTOCOL with the full path, so you can just copy/paste the commands into your terminal.
+
+You can even put that in your .bashrc. It might be wise to to the same for $ROSETTA
+
+==== A note on file formats ====
+
+This tutorial is written using silent files since these are essentially required when performing these calculations at maximum scale. If one wishes to use pdb files instead, most commands here may be easily converted.
+
+$CAO_2021_PROTOCOL/prepare_runs.py -- Pass this command -pdb_list and -group_size instead of -silent_list
+Rifdock -- -outputsilent forces output into silent format. Remove this for pdbs
+
+Finally, if at any time you wish to extract a silent file, the following commands will do it:
+
+All pdbs -- silentextract out.silent
+Specific pdbs -- silentextractspecific out.silent pdb1 pdb2 pdb3
+Random 10 pdbs -- silentls out.silent | shuf | head -n 10 | silentextractspecific out.silent
+
+
+
+=========================== Step 1: Target Selection ===========================
+
+The main text describes the considerations surrounding hydrophobic sasa on the target surface. This, along with the flexibility and shape of the targeting region, should be the main considerations.
+
+Assuming you've found a relatively flat, well ordered area of your protein to target, you can use the following rule of thumb to decide on the tractability of the problem. Using the area of the face of phenylalanine as a ruler: 1 exposed PHE = unlikely to work, 2 exposed PHE = hard but possible, 3 exposed PHE = moderate difficulty, 4 exposed PHE = likely to work, 5 exposed PHE = easy target. If several polar residues (ASP, GLU, LYS, ARG, GLN, ASN) are near your exposed hydrophobics, consider it harder than what was described.
+
+
+==== Quantifying target hydrophobicity ====
+
+It is actually possible to quantify the target hydrophobicity. This takes a bit more work, but is less work than making binders that don't bind.
+
+Start by using a molecular viewing tool to extract just your target protein of interest. Take care to remove solvent molecules and binding partners as these will affect the calculation. Save this as target.pdb. And run the following command:
+
+$ROSETTA/bin/rosetta_scripts -parser:protocol $CAO_2021_PROTOCOL/per_res_sap.xml -beta_nov16 -renumber_pdb -s target.pdb
+
+This will output a target_0001.pdb with per-residue SAP score information. Next, open PyMOL in the same folder as your target_0001.pdb (you may need to cd within pymol), and open target_0001.pdb. Set your favorite viewing settings (the authors would use show cartoon; show sticks; hide (hydro)) and then run the following command from within pymol.
+
+run $CAO_2021_PROTOCOL/per_res_sap.py
+
+That command will label each CA with the SAP score of the sidechain and will color them more red if they have higher values. (If the pymol command failed, you can manually open the pdb with a text editor and look at the numbers.) In general, you want to select a binding site with enough possible ΔSAP. The way to think about this is that if you can block 100% of the SASA of a residue, you accumulate the SAP score. However, if you can only block half of a residue, you only get half. Cavities behind sidechains can artificially inflate the numbers here because you won't be able to cover the backside of the residue. Be careful around low-density sites.
+
+You can use the Extended Data figure with x-axis = Target Delta SAP and y-axis = Target Success rate as a guide to these numbers. We've been a bit more ambitious since these early experiments and as such, these are the cutoffs that seems to make sense:
+
+SAP Score:
+ 0 -  6 -- No chance of binding
+ 6 -  9 -- Probably won't work, but you might get lucky
+ 9 - 12 -- The limit. Definitely order a lot of designs
+12 - 15 -- Success is likely. You should still order a lot
+15 - 18 -- Easier target. Getting a binder by ordering 100 designs might be possible
+18+     -- Easy target. Be mindful you don't create overly non-polar designs that aggregate
+
+
+Once you are done, delete the target_0001.pdb produced here to avoid confusion in later steps.
+
+
+=========================== Step 2: Target Structue Selection ===========================
+
+The IL7Ra grafting experiment suggests that 0.4Å is about the limit of what is important for binder accuracy. To this end, you must find a target structure where the interface is correct to about this limit. The authors feel nervous using a 3.5A crystal structure and confident at 2.6A. Cryo-EM structures have been used successfully, but NMR structures have never been attempted.
+
+
+=========================== Step 3: Target Structure Preparation ===========================
+
+==== Target relaxation ====
+
+Your target crystal structure must first be relaxed into the Rosetta Energy Function. The best way is to use a method that incorperates both the x-ray density and Rosetta at the same time. But this is beyond the scope of this guide.
+
+The following uses a coordinate-constrained FastRelax to relax your target into the Rosetta force field
+
+$ROSETTA/bin/rosetta_scripts -parser:protocol $CAO_2021_PROTOCOL/paper_coord_relax.xml -beta_nov16 -s target.pdb 
+
+target_0001.pdb is your relaxed pdb.
+
+==== Target trimming ====
+
+This step is optional but will speed up all subsquent calculations. Rosetta considers all residues of your target protein even if they are very far from the interface. For this reason, one can save time by opening the structure in a molecular viewer and deleting residues. Removing residues 20A away from the interface should be safe. The authors typically try to get the target to around 200 residues.
+
+Trim target_0001.pdb and save the result as relaxed_trimmed_target.pdb.
+
+==== Final target prep ====
+
+Lastly, we need to turn your target into a single chain labeled chain A. The first command will remove all chain breaks and convert your protein to chain A. The second will renumber your protein starting at 1. (OXT atoms removed because Rosetta will sometimes interpret them as chain-breaks)
+
+cat relaxed_trimmed_target.pdb | grep '^ATOM' | grep -v OXT | sed 's/./A/22' > target_chainA.pdb
+$CAO_2021_PROTOCOL/rosetta_numbering.py target_chainA.pdb target_ready.pdb
+
+target_ready.pdb is what we will give to RifGen
+
+
+=========================== Step 4: Target Site Selection ===========================
+
+==== Patchdock residue selection ====
+
+Your target was chosen because it had a few specific hydrophobic residues. It is now time to set your selection in stone for the rest of the protocol.
+
+Open target_ready.pdb in a molecular viewing program and select the 3-9 hydrophobic residues that define your interface. At the end of the protocol, you will filter on how much contact your binders are making with these residues. Pick your residues such that a binder will be able to interact with all of them at once. Clumps of residues are better than sparse residues. Ideally, one would only pick hydrophobic residues (ALA, VAL, THR, ILE, PRO, LEU, MET, PHE, TYR, TRP), however, if your site is so hard that polar residues must be picked, this is acceptable (there's a flag you need to give to RifDock if you do this). Know though that by needing to pick polar residues as your patchdock residues, your success rate will not be high.
+
+If you generated the SAP-score colored pdb above. Any hydrophobic residues with a SAP score > 1 are probably good. But again, focus on clumps. If there are two distinct clumps, run this protocol twice.
+
+Thoughout this guide, these residues will be refered to as your PATCHDOCK_RESIDUES.
+
+==== RifGen residue selection ====
+
+RifGen pre-calculates atomic interactions. In order to save memory, it does not pre-calculate atomic interactions for all residues of your target. You must tell RifGen which residues you care about. Residues you select will score normally, residues you do not select will be repulsive-only.
+
+A typical RifGen residue selection will include all of the PATCHDOCK_RESIDUES and their immediate neighbors, usually about 10-25 residues. Fewer residues selected is often best because we want RifDock to focus on your PATCHDOCK_RESIDUES.
+
+Thoughout this guide, these residues will be refered to as your RIFGEN_RESIDUES.
+
+
+=========================== Step 5: RifGen ===========================
+
+There are a few files that must be created in order to run RifGen. The authors like to put these in a folder called "input/".
+
+input/target_ready.pdb - Your single-chain, renumbered target protein from above.
+input/rifgen_res.list - A new-line separated file with one RIFGEN_RESIDUE on each line. (Each line contains a single number)
+input/rifgen.flag - Copy this from the $CAO_2021_PROTOCOL/rifgen.flag. Only the File I/O flags section needs to be changed. If you've followed along exactly, only the -database and -rifgen:data_cache_dir need to be modified. Set the database to the database of the Rosetta you compiled for RifDock.
+
+
+Once your input files are ready to go, the following command will run rifgen. (RifGen can use as many cores on one node as you have access to. Ram requirements range from 16GB - 80GB depending on the size of the target and rifgen_res.list).
+
+$RIFDOCK/build/apps/rosetta/rifgen @input/rifgen.flag > rifgen.log 2>&1
+
+It is critical that you keep the log file.
+
+
+=========================== Step 6: Final Target Aquisition ===========================
+
+This step is the last time we will modify your target. RifGen centers your target protein to the origin, and we need to use this centered target for all subsequent steps.
+
+Enter the rifgen_output/ folder and use the following command to identify your centered target.
+
+ls *target*.pdb.gz
+
+The last thing we need to do is convert your target to chain B. For the remainder of this guide, the binder will always be chain A and the target chain B.
+
+$CAO_2021_PROTOCOL/chain_change.py *target*.pdb.gz AB
+
+The following command will tell you the full path to your chain_changed target. Save this for later:
+
+readlink -f *target*chain*.pdb
+
+The full path to your chain changed target will be refered to as: CHAIN_CHANGED_TARGET
+
+
+=========================== Step 7: Convert Scaffolds to Poly Valine ===========================
+
+The authors found that patchdock works best for interface design when the scaffolds are first converted to poly-valine. An xml, $CAO_2021_PROTOCOL/polyV.xml, is provided to do the conversion for you. Either run the xml in your favorite way, or use the following commands.
+
+Let scaffolds.list contain full paths the scaffolds you wish to convert. (See above for ways to use our scaffolds.)
+
+$CAO_2021_PROTOCOL/prepare_run.py -pdb_list scaffolds.list -xml $CAO_2021_PROTOCOL/polyV.xml -group_size 200 -rosetta_scripts $ROSETTA/bin/rosetta_scripts
+
+polyV_commands.list now contains the commands you must run. 2GB of ram and 1 cpu should be enough for these.
+
+After the commands finish, this will get you a list of poly-valine scaffolds.
+
+find $(pwd)/polyV -name '*.pdb' > polyV_scaffolds.list
+
+
+=========================== Step 8: PatchDock ===========================
+
+We first need to tell patchdock about which residues to target. Create a file called input/patchdock_residues.list. On each line, enter one of your PATCHDOCK_RESIDUES followed by a space and B. The file should look like this: (but with different numbers)
+
+10 B
+16 B
+23 B
+44 B
+
+Next, create a folder called patchdock_xforms/ and enter it. In the following command, you need to specify the path to where you downloaded PatchDock (the PathDock/ folder) and your CHAIN_CHANGED_TARGET.
+
+$CAO_2021_PROTOCOL/setup_patchdock_jobs.py -target_pdb CHAIN_CHANGED_TARGET -patchdock PatchDock/ -pdb_list ../polyV_scaffolds.list -target_res ../input/patchdock_residues.list > ../patchdock_commands.list
+
+Once that command finishes (it takes a while), patchdock_commands.list contains the commands you need to run. Each command uses 1 cpu and 1GB of ram and takes about a minute.
+
+
+=========================== Step 9: RifDock Setup ============================
+
+In this step, we'll work out the technical details of getting RifDock going. In the next one, we'll work on the scientific side.
+
+In the same folder where your input/ and rifgen_output/ are, copy the $CAO_2021_PROTOCOL/rifdock.flag into the input/ folder. Next, open the rifgen.log file, scroll to the bottom, and copy the entire section labeled "What you need for docking". Paste this into the top of your rifdock.flag file.
+
+Next, you'll need to update a few paths in rifdock.flag. Change the -database and -rifdock:rotrf_cache_dir to paths appropriate on your system. Then scroll down a bit and change the -xform_pos path to point to the one included here. (The $CAO_2021_PROTOCOL won't substitute inside the flags file).
+
+With the flags file in place, it's time to make the commands. This command assumes that patchdock_xforms/ input/ and rifgen_output/ are all in the same folder along with scaffolds.list. (And that the polyV scaffolds have names that only differ by _0001).
+
+$CAO_2021_PROTOCOL/setup_rifdock_commands.py scaffolds.list patchdock_xforms/ input/rifdock.flag $RIFDOCK/build/apps/rosetta/rif_dock_test
+
+rifdock_commands.list now contains your commands to run. When you submit these, rifdock can use as many cpus as it has access to (or controlled by OMP_NUM_THREADS=X). Determining the minimum ram usage requires a little trial and error. However, a safe upperbound is to take the "RIF size:" from the rifgen.log and add 10GB to it.
+
+
+=========================== Step 10: RifDock Tuning ===========================
+
+There are many ways to set up RifDock to give the best outputs. The authors tried many different ideas and these ideas all remain in RifDock as flags for one to try. However, the authors eventually settled on a semi-automated way to tune RifDock such that the inner workings of the program do not need to be known by the user.
+
+We will be using RifDock to target your PATCHDOCK_RESIDUES. This is a reliable way to get good output and is easy to set up.
+
+First, open the flags file and find -hydrophobic_target_res. Set this to a comma-separated list of your PATCHDOCK_RESIDUES. If some of your PATCHDOCK_RESIDUES are actually polar residues (this was discussed earlier in this guide) uncomment the flag -count_all_contacts_as_hydrophobic.
+
+Next, find -require_hydrophobic_residue_contacts and set this to 2 fewer than the number of PATCHDOCK_RESIDUES. This is the number we are going to be fine tuning.
+
+RifDock will cluster your docks before outputting them. -rif_dock:redundancy_filter_mag controls the RMSD between outputs. This is set to a default of 0.5Å which works well for the 65aa proteins. You may change this number to a different value. A goal would be to ensure that your outputted interfaces are at least 0.3Å RMSD different from each other.
+
+Lastly, go to the top of the script and set -n_pdb_out_global to a number such that -n_pdb_out_global * len(scaffolds.list) is the number of RifDock outputs you wish to achieve.
+
+
+It is now time to start tuning. Essentially, we want to maximize -require_hydrophobic_residue_contacts while ensuring that you are getting -n_pdb_out_global for each scaffold. Additionally, we want to make sure that the runtime isn't too high. 
+
+Start by running a rifdock command and seeing how many outputs you get per scaffold. (2 to 3 scaffolds is probably fine then you can press ctrl+C). If you are getting -n_pdb_out_global, you may consider increasing -require_hydrophobic_residue_contacts by 1 and trying again. If you are getting fewer, consider decreasing it by 1.
+
+There is another way to get more outputs: do more sampling. The -xform_pos flag specifies how many perturbations to apply to each patchdock output. The $CAO_2021_PROTOCOL/small_sampling_10deg_by1.7_1.5A_by_0.6.x only samples 10K perturbations while $CAO_2021_PROTOCOL/large_sampling_10deg_by1.1_2A_by0.35.x samples 100K perturbations. Going from the small file to the large file will increase your runtime by 10-fold, however, you will probably get more output.
+
+Additional -xform_pos files may be generated by adding these 5 flags to your rifdock command and changing the values appropriately. They will get dumped to the current folder. (You can actually get rid of the -scaffolds and -seeding_pos flags to make this easier to look at.)
+
+-dump_xform_file
+-dump_override_cart_search_radius 2.0
+-dump_override_cart_search_resl 0.35
+-dump_override_angle_search_radius 10
+-dump_override_angle_search_resl 1.1 
+
+
+At this point, it may be wise to actually open your RifDock outputs (in rifdock_output/) in a molecular viewing program to see how your choice of -require_hydrophobic_residue_contacts is actually affecting the output. An important note is that RifDock will only mutate a few positions to "rifres" and leave the rest as they were on the input scaffold. For this reason, your output pdbs will appear to be clashing. The "rifres" are listed inside the pdb file. The authors included a script $CAO_2021_PROTOCOL/rifres.py which may be run in PyMOL with "run rifres.py" to view only the rifres. (PyMOL needs to be in the rifdock_output/ folder for this to work. cd there within pymol.)
+
+By inspecting your outputs, you will notice that at higher -require_hydrophobic_residue_contacts, your binders will interact with more of the target, but you'll get fewer output. Increase this number as much as you can; however, as large sampling is the key to this protocol, it's better to get more slightly worse output, than fewer better output.
+
+
+Once you're happy with your flags. You need to add one final flag:
+
+-outputsilent
+
+This flag will make sure that all of your outputs are in silent file format. If you don't do this, be prepared for an enormous number of pdb files.
+
+
+
+At this point, run your rifdock jobs using your system. After they have finished, you can use the following command to collect them all into a single file.
+
+cat rifdock_out/*.silent > rifdock_out.silent
+
+
+
+=========================== Step 11: Running the predictor xml ===========================
+
+(At very small sample sizes (< 1000 rifdock outputs), you may skip this step. And go directly to Step 14)
+
+This protocol uses a fast predictor xml that takes 20 seconds before running the full design xml that takes 300 seconds. In this way, we can weed out bad docks before we spend too much time on them.
+
+To begin, we need to break your rifdock_out.silent file into chunks to run through rosetta. At 20 seconds per structure, you may pick your split size to give reasonable runtimes. Here we'll be breaking them into groups of 1000 for 5-hour jobs.
+
+mkdir rifdock_out_splits
+cd rifdock_out_splits
+silentsplitshuf ../rifdock_out.silent 1000
+cd ..
+find $(pwd)/rifdock_out_splits -name '*.silent' > rifdock_out_splits.list
+
+Next, we need to make a flags file for this run. Create a predictor.flags and place the following into it. (Replacing PATCHDOCK_RESIDUES with a comma-separated list, and replacing RUNPSIPRED_SINGLE with the correct path.)
+
+-script_vars patchdock_res=PATCHDOCK_RESIDUES
+-script_vars runpsipred_single=RUNPSIPRED_SINGLE
+-dunbrack_prob_buried 0.8
+-dunbrack_prob_nonburied 0.8       # Use a reduced rotamer set to speed up calculations
+-dunbrack_prob_buried_semi 0.8
+-dunbrack_prob_nonburied_semi 0.8
+
+
+With the silent file split and the flags file ready, we can make the predictor commands with the following command:
+
+$CAO_2021_PROTOCOL/prepare_run.py -xml $CAO_2021_PROTOCOL/paper_predictor.xml -silent_list rifdock_out_splits.list -flags_file predictor.flags -no_pdb_out -rosetta_scripts $ROSETTA/bin/rosetta_scripts -no_log
+
+That will produce a paper_predictor_commands.list file which contains your commands. Each uses 1 cpu and 1-2GB of ram.
+
+!!!! File system warning !!!
+   The way PsiPred works within Rosetta involves writing temporary files and opening the PsiPred executable. In total, about 3 temporary files are created and 9 calls to open(). At small scales or on robust file systems, this doesn't matter. But, if you have 5,000 cpus calling open 9 times every 20 seconds, you're looking at 2,000 open() calls per second! Some system administrators will ban you instantly for doing this (The authors love TACC, but they will ban you for this).
+
+   There are 2 workarounds:
+   1. Drop PsiPred from the xml (just delete any line with "mismatch" in it) 
+   2. Do all of the following:
+         - set use_scratch_dir="True" in the SSPrediction filter
+         - set -out:path:scratch to a directory that is safe to overwhelm (/tmp is usually machine-local)
+             - Do this by adding -flags="-out:path:scratch /tmp" to the prepare_run.py commmand above
+         - copy psipred to the same directory and change your flags file to reflect this (this might be hard to do if you are running multi-node commands. You should probably run "rsync -avz /path/to/PsiPred /tmp" as opposed to cp so no one sees a partial copy )
+
+
+    Finally, depending on the fragility of your system, even writing to the scorefile may be too frequent (Rosetta runs stat(), stat(), open(), write(), close() for each structure). At the moment, there's no way to buffer this. The best solution is probably to write the scorefile to that same /tmp directory and copy it back after your job finishes. Knowing that the directory the job runs from is uniquely named, you could add this flag to write to a unique file: -out::file::scorefile /tmp/$(basename $(pwd)).sc . Adding that to the above command would look like this: -flags="-out::file::scorefile /tmp/\$(basename \$(pwd)).sc"
+        After your job finishes, you'll have to run this then. mv /tmp/$(basename $(pwd)).sc score.sc
+        You could modify your commands file like this: sed -i 's%$%; mv /tmp/$(basename $(pwd)).sc score.sc%g' paper_predictor_commands.list
+
+
+    Only the predictor step suffers badly from this because it's so quick. The design trajectories have the same problem, but with only writing every 300 seconds, you aren't likely to cause as much trouble (unless you're running on 100,000 cpus...)
+
+
+After your jobs run. You can use the following command to collect your score files.
+
+$CAO_2021_PROTOCOL/collect_score_files.sh paper_predictor
+
+paper_predictor_combined.sc contains your predictor scores.
+
+
+=========================== Step 12: Running a pilot job ===========================
+
+As part of the prediction process, we need to know the results of running the full protocol on a few of your rifdock outputs. We will now run a random 1000 docks through the design xml.
+
+First, we slice out 1000 random docks.
+
+silentls rifdock_out.silent | shuf | head -n 1000 | silentslice rifdock_out.silent > pilot.silent
+
+Next, we need to split up the docks into reasonable chunks for rosetta_scripts. We'll aim for 4 hours again, which gives groups of about 20.
+
+mkdir pilot_splits
+cd pilot_splits
+silentsplitshuf ../pilot.silent 20
+cd ..
+find $(pwd)/pilot_splits -name '*.silent' > pilot_splits.list
+
+We now need to make a flags file for your design runs. Open design.flags and add the following flags: (Replacing PATCHDOCK_RESIDUES with a comma-separated list. And setting the correct absolute paths for DALPHABALL, RUNPSIPRED_SINGLE, and SS_GROUPED_VALL_ALL)
+
+-script_vars patchdock_res=PATCHDOCK_RESIDUES
+-script_vars runpsipred_single=RUNPSIPRED_SINGLE
+-dalphaball DALPHABALL
+-indexed_structure_store:fragment_store SS_GROUPED_VALL_ALL
+#-dunbrack_prob_buried 0.8
+#-dunbrack_prob_nonburied 0.8       # Use a reduced rotamer set to speed up calculations
+#-dunbrack_prob_buried_semi 0.8
+#-dunbrack_prob_nonburied_semi 0.8
+
+One can optionally add the -dunbrack_prob flags. Doing so will reduce runtime by about 50%, at the cost of slightly worse scoring designs. The authors are undecided on if this is a good idea, but if CPU time is a major limit, this may be a good option. (300 seconds with, 600 seconds without)
+
+The following command will then produce your pilot commands:
+
+$CAO_2021_PROTOCOL/prepare_run.py -xml $CAO_2021_PROTOCOL/paper_interface_design.xml -silent_list pilot_splits.list -flags_file design.flags -rosetta_scripts $ROSETTA/bin/rosetta_scripts -suffix _pilot
+
+paper_interface_design_pilot_commands.list contains the list of command you need to run. Each command will use 1 cpu and use about 6GB of ram. (If ram is a major concern, the "StructProfileMover" may be eliminated from the xml bringing the ram down to 1-2GB and eliminating the need for SS_GROUPED_VALL_ALL)
+
+Once those commands finish, the following command will collect your results and produce a score file.
+
+cat paper_interface_design_pilot/*/out.silent > paper_interface_design_pilot_combined.silent
+silentscorefile paper_interface_design_pilot_combined.silent
+
+paper_interface_design_pilot_combined.sc contains the scores from your pilot run. (You might also want to look at a few of the pdbs. See above for info on extracting silent files)
+
+
+=========================== Step 13: Predict which RifDock outputs to use ===========================
+
+For this step, we'll be using a jupyter notebook to do the filter. You'll want to copy $CAO_2021_PROTOCOL/paper_predictor.ipynb to your current directory.
+
+Open the paper_predictor.ipynb notebook and ensure that you have all the necessary python packages and that the path to your score files is correct. Begin running cells until you are presented with a histogram of "contact_patch". contact_patch is the amount of contact your binder is making with your PATCHDOCK_RESIDUES and is the primary metric we seek to maximize. Pick the 90th - 95th percentile value from this graph and fill in the table in the cell below. (Replacing 380 with whatever value you chose)
+
+After running the next cell, you'll see how many of your designs passed the different filters. Ideally, you want to get about 10 designs that pass all of the filters. You can adjust the filters until you get enough output. (Setting ddg to -30 and contact_molecular_surface to 400 is about the lowest those should go. mismatch_probability can be increased to about 0.3 if your structures contain beta-sheets. score_per_res can also be adjusted and is highly scaffold-library dependent.)
+
+The next cell will dump a file that contains your pdbs that passed all the filters. It may be wise to take a look at these and make sure that everything is going according to plan. The following command will extract the pdbs:
+
+mkdir pilot_orderable
+cd pilot_orderable
+cat ../pilot_orderable_tags.list | silentextractspecific ../paper_interface_design_pilot_combined.silent
+
+The next two cells will set up the Maximum Likelihood Method. The sigmoid graphs show how well the method is able to predict each score term. The first (blue) curve in each graph represents your data. Your pilot designs were binned by their score in the predictor xml. Then, within each bin, the y-axis is the fraction of the designs in that bin that passed the filter threshold you set earlier. Ideally, this curve should form a smooth sigmoid that goes all the way from P(passing_filter) = 0 to P(passing_filter) = 1. A flat line indicates no predictive power and indicates that you may want to adjust your threshold to cut closer to 50%. contact_patch, the most important filter), usually has a curve that goes from 0 to 0.2. This is fine, Rosetta has a hard time optimizing this metric.
+
+Once you're satisfied with your cutoffs, the next cell will produce 3 graphs. The first graph is the most important and shows the predictive power. Typical AUC values range from 0.6 - 0.8. Do not be alarmed if the AUC is very bad (close to 0.5 or even below). At the end of the day, the predictor is going to take roughly the top X% from each of the metrics you filtered on, so even if it doesn't appear to be predictive, it will still be performing the best naive filtering. At large numbers of samples (much larger than the 1000 pilot designs), the predictor AUC is usually fairly good. 
+
+The last thing to do is to set the correct number_to_design and write the output tags. Run the last few boxes making this change and your best docks for FastDesign will be written to predicted_fastdesign_tags.list (The predictor works best when it is selecting 1% to 10% of your docks to design. If you are only taking the top 50%, it'll be worth your while to go get more docks somehow (more scaffolds, more outputs per scaffold).)
+
+predicted_fastdesign_tags.list contains the selected rifdock outputs to design.
+
+
+=========================== Step 14: Running FastDesign on RifDock outputs ===========================
+
+This is the step that requires the most CPU time. Here we will be assigning the final sequence to your binders.
+
+To begin, we need to slice out the specific pdbs that we'll be using from all of your rifdock outputs using predicted_fastdesign_tags.list.
+
+cat predicted_fastdesign_tags.list | silentslice rifdock_out.silent > to_design.silent
+
+Next, we need to split this silent file up into smaller chunks for design. We'll use groups of 20 again for 4 hour jobs.
+
+mkdir to_design_splits
+cd to_design_splits
+silentsplitshuf ../to_design.silent 20
+cd ..
+find $(pwd)/to_design_splits -name '*.silent' > to_design_splits.list
+
+Finally, we'll reuse design.flags from an earlier step and create your FastDesign commands.
+
+$CAO_2021_PROTOCOL/prepare_run.py -xml $CAO_2021_PROTOCOL/paper_interface_design.xml -silent_list to_design_splits.list -flags_file design.flags -rosetta_scripts $ROSETTA/bin/rosetta_scripts -suffix _production -no_log
+
+paper_interface_design_production_commands.list contains the commands to run. Each command will use 1 cpu and use about 6GB of ram. (If ram is a major concern, the "StructProfileMover" may be eliminated from the xml bringing the ram down to 1-2GB and eliminating the need for SS_GROUPED_VALL_ALL)
+
+After those finish, use the following command to collect your results.
+
+cat paper_interface_design_production/*/out.silent > paper_interface_design_production_combined.silent
+silentscorefile paper_interface_design_production_combined.silent
+
+paper_interface_design_production_combined.silent contains your design outputs and paper_interface_design_production_combined.sc contains their scores. It is certainly possible to stop at this point. However, if you keep going, you will create binders with even better metrics than the ones produced here.
+
+
+=========================== Step 15: Motif extraction ===========================
+
+In this step, we'll be extracting single secondary structural elements to use for the de novo motif graft step.
+
+First, we need to split your finished FastDesign outputs into manageable chunks.
+
+mkdir fd_output_splits
+cd fd_output_splits
+silentsplitshuf ../paper_interface_design_production_combined.silent 1000
+cd ../
+find $(pwd)/fd_output_splits -name '*.silent' > fd_output_splits.list
+
+Next we need to set up the motif extraction jobs with motif_extraction.py. In the following command, you need to substitute in your full path to CHAIN_CHANGED_TARGET.
+
+
+$CAO_2021_PROTOCOL/prepare_run.py -python_script $CAO_2021_PROTOCOL/motif_extraction.py -silent_list fd_output_splits.list -flags="-ref_pdb CHAIN_CHANGED_TARGET -out_prefix mot_"
+
+motif_extraction_commands.list contains the commands to extract your motifs. These should run for about 10 minutes each, use 1 cpu, and require 1-2GB of ram.
+
+!!! File system warning !!!
+    This step will produce about 4 files for every structure you give it in very short order. If that number of files is going to overload your system, you can change -ddg_threshold in the above command. Setting -ddg_threshold -25 inside the -flags="" will probably reduce the number of outputs to 0.2 files per structure. This will produce fewer motifs, but you'll still have the really good ones.
+
+    This script processes about 5 pdbs per second. Again, think about how many files it's going to write in a short amount of time and consider where you are running this command. If this is starting to sound dangerous, consider running these commands serially rather than in parallel.
+
+
+Adding the flag -dump_og to the above command will allow better visualization of the motifs (this dumps the motif in the presense of the target molecule). The downside is that you will output 50% more files and probably 10x more data.
+
+
+
+Once those commands have finished, the following command will find all of your extracted motifs.
+
+find $(pwd)/motif_extraction -name '*.gz' | grep -v '_og.pdb.gz' > all_motifs.list
+
+
+=========================== Step 16: Clustering motifs ===========================
+
+Assuming you've compiled motif_clustering/cluster this step is very easy. The 0.7 is the TM-Score cutoff for two motifs to be considered in the same cluster.
+
+mkdir motifing
+cd motifing
+$PPI_TOOLS/motif_clustering/cluster ../all_motifs.list 0.7
+
+motifing/cluster_results.list now contains your clustered motifs.
+
+
+=========================== Step 17: Pick the best motifs ===========================
+
+This step will pick the best motifs. Change -num_motifs to be the number of motifs you want to use.
+
+cd motifing
+$CAO_2021_PROTOCOL/motif_selection.py cluster_results.list '../motif_extraction/*/*.json' -num_motifs 1000 > selected_motifs.list
+
+motifing/selected_motifs.list contains the motifs to use as well as information on hotspots.
+
+
+=========================== Step 18: Finalize the best motifs ===========================
+
+This step will trim down the motifs and put them in the current folder.
+
+cd motifing
+mkdir motifs
+mkdir originals
+$CAO_2021_PROTOCOL/motif_finalization.py ../all_motifs.list selected_motifs.list motifs originals
+
+motifing/motifs_with_hotspots.list now contains the paths to the motifs to use as well as their hotspot residues.
+
+If you added -dump_og above. originals/ will contain the motifs in complex for you to look at. You can delete any from the list that you don't like.
+
+
+=========================== Step 19: Actual motif grafting ===========================
+
+This step is a little more complicated than it needs to be because it's hard to get Rosetta to do this fast.
+
+First, we need to turn your scaffolds into a silent files. This greatly speeds up the motif grafting step:
+
+cat scaffolds.list | silentfrompdbsparallel > scaffolds.silent
+mkdir scaffold_splits
+cd scaffold_splits
+silentsplitshuf ../scaffolds.silent 1000
+cd ..
+find $(pwd)/scaffold_splits -name '*.silent' > scaffold_splits.list
+
+Next we make a flags file for the grafting step called grafting.flag. Replace CHAIN_CHANGED_TARGET with the correct full path. The 1400 sasa threshold should work for most projects. You can decrease this if you don't get many outputs.
+
+-jd2::failed_job_exception 0
+-parse_script_once_only
+-parser:script_vars contextpdb=CHAIN_CHANGED_TARGET
+-parser:script_vars initial_sasa_threshold=1400
+-run::crash_to_console false
+
+
+The following command will then set up your motif grafting runs. This command takes the path to $CAO_2021_PROTOCOL/prepare_run.py as an argument.
+
+$CAO_2021_PROTOCOL/setup_motif_graft.sh motifing/motifs_with_hotspots.list $CAO_2021_PROTOCOL/prepare_run.py -xml $CAO_2021_PROTOCOL/paper_motif_graft.xml -silent_list scaffold_splits.list -flags_file grafting.flag -rosetta_scripts $ROSETTA/bin/rosetta_scripts -no_log -ROSETTA_CRASH_HACK
+
+When that finishes, motif_runs_commands.list will contain the commands you need to run. Each one of these commands will take about an hour (highly variable) and will use 1 cpu and 1-2GB of ram.
+
+!!! File system warning !!!
+    The culprit this time is going to be opening and closing the out.silent file (10 times per second?). Thankfully, there's a flag to buffer this.
+
+    Simply add -buffer_silent_output 1000 to grafting.flag and you'll only write in chunks of 1000 structures.
+
+
+    -ROSETTA_CRASH_HACK
+       It gets worse. The authors use ancient versions of Rosetta and haven't used the latest one in a while. On the latest version of Rosetta, a crash log file will be written FOR EVERY STRUCTURE ATTEMPTED. There's no way to disable this either.
+
+       This flag adds a folder with the same name as the crash log. This way Rosetta can't write the log file (which is 5KB per structure) because it will fail to write.
+
+       Someday the authors will fix this. If you're using a version of Rosetta from the future (think 2022), you can try running without this flag. You'll know all is well if ROSETTA_CRASH.log does not appear in your directory.
+
+       As far as sensitive file systems go, this is going to be a show-stopper. If you are on a sensitive file system, the suggestion is to go into $ROSETTA/src/utility/excn/Exceptions.cc and delete the "crash_log();" line inside "Exception::display()" and recompile. At the time of writing, this is line 64. If this patch works on your version, ROSETTA_CRASH.log will not be written and you don't need -ROSETTA_CRASH_HACK.
+
+
+After you've finished running your motif graft commands, the following will collect all your motif graft outputs.
+
+cat motif_runs/*/*/out.silent > motif_runs_combined.silent
+
+
+=========================== Step 20: Redo steps 11 - 14 ===========================
+
+You're nearly there. What remains is to run the predictor/pilot jobs on your motif_runs_combined.silent and then to run FastDesign on the best ones. The best way to do this is probably to make a new folder so that you don't have name conflicts. However, $CAO_2021_PROTOCOL/prepare_runs.py takes a -suffix option which will allow you to give your runs different names. Just be careful that you always add a suffix (or modify the old one) and that you always run the new commands.list file.
+
+
+=========================== Step 21: Final filtering ===========================
+
+A notebook is provided to help you through this step. But you can also do this with awk if that's more your style.
+
+The authors have been using these cutoffs at the time of writing to order new designs:
+
+contact_molecular_surface > 450
+ddg < -30
+binder_delta_sap > 12         # totally polar binders don't seem to work. This looks like the cutoff
+mismatch_probability < 0.1    # you can go up to 0.3 for beta-sheet designs
+sap_score < 35   # not strictly necessary for yeast surface display. But your designs will aggregate in E. coli above this
+score_per_res < -2.4 # Super topology dependent
+
+# optional:
+# ss_sc > 0.77 # If you have tons of outputs, this will increase your success rate. However, it's not a robust filter
+
+
+And then trying to optimize the following metrics until they reach the number they wish to order:
+
+ddg
+contact_patch
+target_delta_sap
+contact_molec_sq5_apap_target
+
+Ideally, you'd be taking the 90th percentile and above according to these metrics. If you're only taking the top 20th percentile, you may need to go back and make more designs.
+
+
+Now, copy $CAO_2021_PROTOCOL/final_filtering.ipynb and set the values accordingly.
+
+
+==== Perpare to_order.silent ====
+
+With to_order.list being the list of tags you want to order, you can use the following command to make 1 big silent file: (This command is going to make a lot of noise. Just make sure that "silentls to_order.silent | wc -l" gives the right number after you're done)
+
+cat to_order.list | silentslice paper_interface_design_production_combined.silent > to_order.silent
+cat to_order.list | silentslice motif_graft_design/paper_interface_design_production_combined.silent >> to_order.silent
+
+to_order.silent now contains your designs to order.
+
+
+==== Perpare to_order.seq ====
+
+This command will produce a sequence file for you:
+silentsequence to_order.silent | awk '{print $1,$NF}' > to_order.seq
+
+
+==== Extract pdbs ====
+
+And this command will extract all of the pdbs:
+mkdir to_order_pdbs/
+cd to_order_pdbs
+silentextractparallel ../to_order.silent
+
+
+
+It's totally valid to order everything in that file and hope for the best. However, if you are planning to test these 1-by-1 instead of at chip scale. It might be worth preparing 2-3x as many as you are going to order and downsampling by hand. Our metrics aren't perfect and humans are decent and picking out good and bad docks. A good rule of thumb is: "Does this look like a native interface?". Before we had any experimental successes, we optimized our designs simply by making them look better by hand. One of the authors even looked through 10,000 pdbs in one day to downsample for a chip!
+
+
+Congrats on making it to the end, good luck with the experiments!
+
+
+
+=========================== Optional Step 22: Adjust net charge ===========================
+
+While this may be an artifact of yeast surface display. The authors have noticed that positively and negatively charged binders seem to bind better than neutrally charged binders (netcharge of +- 4 is about the threshold). While it is often the case that the positively charged binders perform much better on yeast surface than the negatively charged ones, they seem to misbehave more and are very hard to purify. With this in mind, the authors recommend applying a -7 net charge to all designs prior to ordering them. (We looked into the net charge of the target molecule too and didn't find a correlation with the binder charge.)
+
+Let for_netcharge.silent be the designs you wish to modify.
+
+
+Here is an example net_charge.flags. This is set up to use a -7 net charge. If you want to modify that, motify minus7.charge by adjusting the -7, -8, and -6 to your desired charge, charge-1, and charge+1.
+
+-script_vars patchdock_res=PATCHDOCK_RESIDUES
+-script_vars runpsipred_single=RUNPSIPRED_SINGLE
+-dalphaball DALPHABALL
+-indexed_structure_store:fragment_store SS_GROUPED_VALL_ALL
+#-dunbrack_prob_buried 0.8
+#-dunbrack_prob_nonburied 0.8       # Use a reduced rotamer set to speed up calculations
+#-dunbrack_prob_buried_semi 0.8
+#-dunbrack_prob_nonburied_semi 0.8
+-parser:script_vars netcharge=$CAO_2021_PROTOCOL/minus7.charge
+
+
+
+mkdir for_netcharge_splits
+cd for_netcharge_splits
+silentsplitshuf ../for_netcharge.silent 20
+cd ..
+find $(pwd)/for_netcharge_splits -name '*.silent' > for_netcharge_splits.list
+
+$CAO_2021_PROTOCOL/prepare_run.py -xml $CAO_2021_PROTOCOL/adjust_total_netcharge.xml -silent_list for_netcharge_splits.list -flags_file net_charge.flags -rosetta_scripts $ROSETTA/bin/rosetta_scripts -no_log
+
+adjust_total_netcharge_commands.list contains your commands. These will take 6GB of ram and run pretty quick.
+
+cat adjust_total_netcharge/*/out.silent > adjust_total_netcharge_combined.silent
+silentscorefile adjust_total_netcharge_combined.silent
+
+
+
+
+
+
+
+
+
+

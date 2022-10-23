@@ -1,0 +1,92 @@
+
+
+This is a guide to help you prepare your SSM libraries.
+
+
+1. Picking pdbs
+
+You obviously need to pick your best binders for the SSM, we'll leave
+ that step up to you.
+
+
+2. Producing original sequence files
+
+Once you have them though, you need to produce 2 files:
+
+to_order_just_ssm.seq -- unpadded protein sequences
+to_order_just_ssm.dna -- fully-padded-adaptor'd DNA sequences
+
+Both of these files have the same format:
+SEQUENCE NAME
+
+
+If you've been following along with chip_level_dna.txt, you can obtain
+ these two files like this:
+
+
+Create: ssm_tags.list -- contains the names you want to order
+
+Then:
+cat ssm_tags.list | grep -f- to_order.seq > to_order_just_ssm.seq
+cat ssm_tags.list | grep -f- DNA_sequence_adapter.list | awk '{print $NF,$2}' > to_order_just_ssm.dna
+
+
+Ensure that the newly created files have the right number of lines. If
+ they have too many (because you have designs with very similar names),
+ you can modify the commands like this.
+
+cat ssm_tags.list | awk '{print " "$1"$"}' | grep -f- to_order.seq > to_order_just_ssm.seq
+cat ssm_tags.list | awk '{print " "$1" "}' | grep -f- DNA_sequence_adapter.list | awk '{print $NF,$2}' > to_order_just_ssm.dna
+
+
+3. Extract the design-coding DNA
+
+Next, we're going to extract the actual coding DNA for your designs
+
+./extract_dna_sequence_no_pad.py to_order_just_ssm.dna to_order_just_ssm.seq > originals.dna
+
+
+This script may say "Partial Sequence!!". This is fine. It's because your
+ 230 bp DNA sequence is 1 character short of a multiple of 3 (so partial
+ codon).
+
+
+
+4. Turn the DNA into a fasta file
+
+cat originals.dna | awk '{print ">"$2"\n"$1"\n"}' > originals.fasta
+
+
+5. Create the SSM DNA
+
+We'll use a script that Eva Strauch made here:
+
+./make_explicit_SSM.py --in=originals.fasta --table=k12.condons.tab > originals_SSM.dna
+
+
+
+6. Add the padding and adapters back to the sequences
+
+This script reuses the original padding and adapters from your original order:
+
+./repad_dna_sequence_for_ssm.py to_order_just_ssm.dna to_order_just_ssm.seq originals_SSM.dna > SSM_DNA_W_ADAPTER.txt
+
+It may say "Partial sequence!!!". Just like in step 3, this is probably fine.
+
+
+7. Convert to orderable text format
+
+SSM_DNA_W_ADAPTER.txt contains the final DNA we want to order. Here are two other formats you might want:
+
+TEXT file of just DNA:
+cat SSM_DNA_W_ADAPTER.txt  | awk '{print $1}' > TO_ORDER_SSM_DNA.txt
+
+
+FASTA file original names:
+cat SSM_DNA_W_ADAPTER.txt | awk '{print ">"$2"\n"$1"\n"}' > TO_ORDER_SSM_DNA.fasta
+
+
+
+
+
+

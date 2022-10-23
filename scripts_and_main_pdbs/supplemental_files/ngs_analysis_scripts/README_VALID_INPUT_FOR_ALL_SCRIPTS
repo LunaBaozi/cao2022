@@ -1,0 +1,61 @@
+Can't figure out how to run one of our scripts? No worries, all of these commands ran for us.
+
+# Estimate affinity keeping track of doubly-transformed cells
+
+cd supplemental_files/ngs_analysis_scripts;
+./estimate_affinity_from_ngs.py ../sorting_ngs_data/FGFR2/pooled_counts.list ../sorting_ngs_data/FGFR2/sorts.csv
+
+
+# Estimate affinity without keeping track of doubly-transformed cells
+
+cd supplemental_files/ngs_analysis_scripts;
+./estimate_affinity_from_ngs.py ../sorting_ngs_data/FGFR2/pooled_counts.list ../sorting_ngs_data/FGFR2/sorts.csv --cell_copies_before_first_sort 0
+
+
+# Color pdb by entropy from a single round of sorting (sort of a negative control if you don't trust these scripts...)
+
+cd supplemental_files/ngs_analysis_scripts/ssm_stuff;
+./color_pdb_by_entropy_simple.py ../../sorting_ngs_data/VirB8_ssm/pooled_counts.list bc2 ../../design_models_ssm_natives/VirB8_ssm/*.pdb
+
+
+# Color pdb by entropy from a single round of sorting. But where that round was carefully chosen to match the binder SC50
+
+cd supplemental_files/ngs_analysis_scripts/ssm_stuff;
+./color_pdb_by_entropy.py ../../sorting_ngs_data/VirB8_ssm/pooled_counts.list ../../sorting_ngs_data/VirB8_ssm/sorts.csv ../../ngs_analysis/affinities/VirB8_ssm.sc ../../design_models_ssm_natives/VirB8_ssm/*.pdb
+
+
+# Color pdb by entropy from multiple rounds of sorting using the SC50 values
+
+cd supplemental_files/ngs_analysis_scripts/ssm_stuff;
+./color_pdb_by_entropy.py ../../sorting_ngs_data/VirB8_ssm/pooled_counts.list ../../sorting_ngs_data/VirB8_ssm/sorts.csv ../../ngs_analysis/affinities/VirB8_ssm.sc ../../design_models_ssm_natives/VirB8_ssm/*.pdb --use_pseudo_entropies
+
+
+# Create some SSM heatmaps
+
+cd supplemental_files/ngs_analysis_scripts/ssm_stuff;
+create_ssm_graphs.ipynb should already be good to go as long as your run it from that directory.
+
+
+# Fast relax a structure to prepare for SSM validation (you'll have to adjust a path within the xml for your system)
+
+cd supplemental_files/ngs_analysis_scripts/ssm_stuff;
+$ROSETTA/bin/rosetta_scripts -s ../../design_models_ssm_natives/VirB8_ssm/ems_3hC_1642_000000001_0001.pdb -parser:protocol fast_cart_fastrelax.xml -beta_nov16 -nstruct 3
+
+
+# Create unrelaxed versions of all SSM mutations as part of the ssm_validation procedure
+#   (If you're actually doing validation. Make sure you relax the parent structure first)
+
+cd supplemental_files/ngs_analysis_scripts/ssm_stuff;
+./make_all_ssm_mutations.py ../../design_models_ssm_natives/VirB8_ssm/ems_3hC_1642_000000001_0001.pdb
+
+
+
+# Relax individual SSM mutations created by make_all_ssm_mutations.py
+#   (You'll have to make your own silent file for input here. This command technically won't run as is)
+
+cd supplemental_files/ngs_analysis_scripts/ssm_stuff;
+$ROSETTA/bin/rosetta_scripts -in:file:silent all_mutations.silent -parser:protocol fast_cart_fastrelax.xml -beta_nov16 -nstruct 3 -out:file:silent out.silent -out:file:silent_struct_type binary
+
+
+
+

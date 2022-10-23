@@ -1,0 +1,8 @@
+These three folders contain scripts that you need to make the DNA for the 3 libraries:
+
+chip_level_dna will convert your protein sequences into dna sequences
+ssm_creation will provide all mutations for a given sequence
+combo_creation will detail the process of creating a degenerate-codon dna library
+
+
+

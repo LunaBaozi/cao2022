@@ -1,0 +1,12 @@
+In an effort to keep this guide working for as long as possible. The important files from the linked github reposititories
+  have been downloaded here.
+
+silent_tools:
+https://github.com/bcov77/silent_tools
+
+ppi_tools:
+https://github.com/LongxingCao/ppi_tools
+
+Rifdock is too big too include here. If you're way in the future and rifdock doesn't work anymore, you can probably get by with just
+  using PatchDock outputs as input for the predictor step. These aren't going to be great docks, but after going through the motif graft
+  stage, you should end up with comparable results (maybe run motif graft twice?)

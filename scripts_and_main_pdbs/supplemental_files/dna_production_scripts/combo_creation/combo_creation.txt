@@ -1,0 +1,239 @@
+
+
+This is a guide to help you prepare the DNA for your combo library.
+
+Unlike the previous two guides, here, you'll be ordering a single DNA
+ sequence. However, that sequence will contain degenerate base pairs.
+
+
+1. Select the protein sequence to combo-optimize
+
+We'll leave this up to you. Notably, you need to have previously ordered
+ an SSM of this design. (Well, techinically not, but otherwise, how
+ would you know which mutations to try?)
+
+
+2. Select the mutations to try
+
+These next few steps form a loop.
+
+You need to pick the mutations you'd like to try for the combo library.
+ In the simplest case, this would be all of the mutations that improved
+ binding in your SSM library.
+
+Here are a few considerations:
+
+A. Be careful with mutations that greatly increase hydrophobicity. The
+ sorting procedure does not optimize for solubility and as such,
+ mutations like this have the potential to prevent expression of the
+ final construct.
+
+B. Consider mutations near the interface rather than away. Yeast-display
+ experiments come with quite a bit of noise. For this reason, not every
+ mutation that looks better really is. If you have to pick between two
+ mutations, pick the one that you personally believe would be the most
+ likely to actually improve affinity. (You're probably right!)
+
+C. If you run out of mutations to try, but would like to fill out the
+ library, there are two things you can do. If you SSM validated several
+ highly-homologous binders, you can borrow good mutations from the other
+ homologs. Alternatively, if you're really out, you can try to make
+ mutations to the core of the protein. These probably won't help, but if
+ you set a cluster of 3 positions each to AILVF, you might get lucky.
+
+
+3. Prepare the CSV input for SwiftLib
+
+Open combo_generator.ipynb
+
+Modify the 3rd cell with your desired mutations and native sequence.
+
+The 4th cell will output the information you need for SwiftLib. When
+ copying this text. Be sure to not accidentally copy an extra new-line
+ at the end. SwiftLib will throw an error about "Could not update table
+ from CSV contents. Expected to find 24 rows, but found 25"
+ if you do this.
+
+
+4. Generate the combo library with SwiftLib
+
+SwiftLib comes from this publication:
+
+Jacobs, Yumerefendi, Kuhlman & Leaver-Fay SwiftLib: rapid degenerate-codon-library optimization through dynamic programming (2014) Nucleic Acids Research, doi: 10.1093/nar/gku1323
+
+It used to be hosted here:
+http://rosettadesign.med.unc.edu/SwiftLib/
+
+However, that site went down, and we found it here:
+https://web.archive.org/web/20190222121816/http://rosettadesign.med.unc.edu/SwiftLib/
+
+Since posting a link to the WayBack machines seems prone to breaking, the
+ webpage is also available inside combo_creation/ as
+ swiftlib_javascript.tar.gz . Simply extract this archive and open 
+ index.html
+
+
+Once you have opened SwiftLib, go to the "CSV input" tab and replace the
+ the contents with the output from combo_generator.ipynb. If an error
+ occurs, it's most likely a copy/paste problem. Ensure you don't copy
+ an extra line and that you're fully replacing what was there.
+
+Click "Update Table"
+
+Return to the "Manual Input" tab.
+
+At the bottom of this tab. Fill in "*Library size upper limit". Setting,
+ this number too high has no effect. So 1e12 might be a good setting.
+
+Leave the other fields blank and click on "Generate Library"
+
+
+Here is the critical part:
+ Look at the "Theoretical Diversity (DNA)". This is how many unique DNA
+ sequences you will be producing. Consider this number compared to how
+ many yeast cells you will sort. Our lab tries to keep the diversity
+ under 1e7 and we sort 3e7 cells.
+
+ If you have too many sequences, you will need to go back to Step 2 and
+ choose fewer mutations. If you don't have very many, perhaps you could
+ go back and pick more.
+
+
+5. Double check your combo library
+
+When generating combo libraries with degenerate base pairs, sometimes
+ additional amino acids will be allowed that you did not request. The
+ reason for this is that we are specifying the degeneracy at the
+ base-pair level, not the codon level. As such, sometimes extra amino
+ acids will be encoded when the full-combinatorial degeneracy is fleshed
+ out.
+
+You need to make sure that these unwanted codons are not going to cause
+ problems. For the most part, the only bad thing that can occur is
+ superfluous hydrophobics. As stated previously, the combo experiments
+ will not guarentee solubility, as such, you need to ensure you don't
+ ruin your solubility.
+
+In the SwiftLib output, mutations you wanted will contain (*). Mutations
+ you did not want will contain (0). Go through each position and ensure
+ that the (0) mutations will not cause solubility issues.
+
+The specific things to watch out for are unwanted LYWFIM mutations.
+ Notably, when these occur on the surface of your protein.
+
+If you do have any of these that you would like to eliminate, you'll
+ need to go back to Step 2 and think carefully about which amino acids
+ to eliminite. You can either perform guess and check here, or grab a
+ codon table and try to sort out which mutations are causing the
+ problem. Don't forget that the native amino acid is also allowed!
+
+
+6. Extract the degenerate codons
+
+Assuming your mutation are looking good and your library diversity is
+ within the bounds you can experimentally test, it's time to set the
+ mutation in stone.
+
+Open a file called degenerate_codons.list
+
+Now, scroll through your SwiftLib output (the green table), and manually
+ copy any denerate codons that were generated. These are simply all the
+ boxes that have more than one amino acid.
+
+Example degenerate_codons.list:
+
+1 KVM
+2 CVA
+10 DHA
+11 CWA
+42 MAA
+44 KYA
+46 RRC
+54 SYA
+
+As this process is manual and prone to errors, perhaps double check you
+ copied everything correctly.
+
+
+7. Obtain your original unpadded DNA sequence
+
+All you need to do is to obtain the non-padded non-adaptor'd DNA sequence
+ that encodes for your design. (i.e. len(DNA) / 3 == len(protein) ).
+ There are plenty of ways to do this, here's one of them.
+
+We'll use the same tool we used for the SSMs to do this. 
+
+If you still have originals.dna from the ssm_creation/ folder. Just grab
+ your sequence out of there.
+
+Alternatively:
+
+Paste your full DNA sequence you ordered (with adapters/padding) into
+ combo_sequence.dna along with the name of the design
+Paste your protein sequence (the same one you used in Step 3) into
+ combo_sequence.seq along with the name of the design
+Both of these files should have 1 line and that one line should have
+ a sequence, followed by a space, followed by the name of the protein.
+Run this:
+ ../ssm_creation/extract_dna_sequence_no_pad.py combo_sequence.dna combo_sequence.seq > combo_sequence_just_protein.dna
+
+combo_sequence_just_protein.dna now contains just the DNA of your
+ designed protein
+
+
+8. Obtain the final degenerate oligo
+
+
+Open final_combo_oligo.ipynb
+
+You will need to edit two cells:
+
+A. Enter your unpadded DNA sequence in the third box. Ensure that
+    the printed protein sequence below matches your design.
+
+B. In the fourth cell, you may need to adjust the path to your
+    degenerate_codons.list
+
+
+The fifth cell will print the results of the combo operation. At this
+ step, you should very carefully compare the listed amino acids to
+ the ones you selected in Step 2. Mistakes here point to either
+ using the wrong DNA sequence in the third cell, or making a mistake
+ creating your degenerate_codons.list
+
+The sixth cell will print your final DNA sequence. Store this somewhere
+ safe.
+
+The seventh cell will print a regular expression that matches your 
+ protein sequence. It's wise to type:
+
+ grep 'THAT_STRING' to_order.seq
+
+ If you did everything right, that command will print one or more lines.
+  One of the lines it outputs should be your parent design.
+
+
+9. Double check your degenerate oligo
+
+This is totally superfluous, however, ordering the wrong sequence can
+ be costly.
+
+Copy your sequence into the last cell inside the my_final_sequence area.
+ Run the cell and it will print a regular expression.
+
+Take the regular expression and grep your list of sequences:
+
+grep 'THAT_STRING' to_order.seq
+
+That should print 1 or more sequences and one of them should be the
+ original sequence you wanted to combo. If you passed this step, you
+ are ordering the right sequence!
+
+
+
+
+
+
+
+
+

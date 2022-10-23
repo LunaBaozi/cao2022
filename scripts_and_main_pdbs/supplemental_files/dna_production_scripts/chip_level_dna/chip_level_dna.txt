@@ -1,0 +1,108 @@
+
+This folder (supplemental_files/dna_production_scripts/chip_level_dna)
+ is designed to help you turn your protein sequences into DNA sequences
+ at the chip-scale.
+
+
+1. Getting protein sequences
+
+To begin, you'll need a text file containing the protein sequences and
+ the protein names. The file should have 2 columns separated by a 
+ space. We'll call this to_order.seq
+
+If your proteins are in a silent file, you can do this:
+
+silentsequences to_order.silent | awk '{print $1,$NF}' > to_order.seq
+
+
+2. Padding protein sequences
+
+Next, we need to pad your sequences all to the same length. You can
+ skip this step if you like, however, if you plan on pooling all of
+ your designs together and performing PCR, you'll want all of your
+ oligos to be the same length so that PCR replication rate is constant.
+
+We'll use the pad_equal.py program included here. This example command
+ will pad your oligos to 65 amino acids using GGS.
+
+./pad_equal.py GGS 65 to_order.seq > padded_to_order.seq
+
+
+3. Setting up DNAworks runs
+
+We've historically used DNA-works to produce our DNA sequences. Most 
+ reverse translation tools would probably work the same. There has even
+ been a preliminary experiment that showed that codon-optimization has
+ absolutely no effect in the context of yeast-display-binding.
+
+First make a new folder:
+
+mkdir dnaworks_runs
+cd dnaworks_runs
+
+Next, set up the jobs. The default arguments should be fine, just be
+ sure to provide a path to the dnaworks executable.
+
+../1_reverse_translate.py -seq_list ../padded_to_order.seq -dnaworks $DNAWORKS
+
+
+This will produce dnaworks_commands.list . Run every command in that
+ file.
+
+
+4. Collecting the DNAworks runs
+
+Run this inside dnaworks_runs:
+
+../2_collect_dnaseq.py
+
+
+5. Verifying the DNAworks runs
+
+Run this inside dnaworks_runs:
+
+../3_check_seq.py DNA_sequence.list
+
+Assuming that went well, copy your DNA_sequence.list out of the
+ dnaworks_runs folder. You no longer need the dnaworks_runs folder
+
+cp DNA_sequence.list ..
+cd ..
+
+
+6. Add the adapters
+
+Assuming you want to place an order for yeast-display. You'll need to
+ add the Petcon adapter. The following script will do that for you:
+
+./4_add_petcon3_adaptor.py DNA_sequence.list DNA_sequence_adapter.list
+
+
+DNA_sequence_adapter.list now contains your protein name, protein sequence, and dna sequence
+
+
+7. Slice out the DNA
+
+Here are two different output formats you might need for placing your
+ order:
+
+TEXT file of just DNA:
+cat DNA_sequence_adapter.list | awk '{print $4}' > TO_ORDER_DNA.txt
+
+
+FASTA file fake names:
+cat DNA_sequence_adapter.list | awk '{print ">"$1"\n"$4"\n"}' > TO_ORDER_DNA.fasta
+
+
+FASTA file original names:
+cat DNA_sequence_adapter.list | awk '{print ">"$2"\n"$4"\n"}' > TO_ORDER_DNA.fasta
+
+
+
+
+
+
+Hopefully your experiments go well!
+
+
+

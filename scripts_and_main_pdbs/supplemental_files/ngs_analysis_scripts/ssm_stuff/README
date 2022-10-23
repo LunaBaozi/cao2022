@@ -1,0 +1,64 @@
+The files you need to analyze your SSM results
+
+The color_pdb_by_entropy scripts are for coloring your PDB by the entropy observed in the experimental data.
+Use:
+  color_pdb_by_entropy_simple.py -- If you just want to color your pdb from a single round
+  color_pdb_by_entropy.py -- If you want to color your pdb taking into account all information
+        -- Adding this flag: --use_pseudo_entropies will color your pdb using the computed SC50 value. This may give best results
+
+create_ssm_graphs.ipynb will create SSM heatmaps similar to those found in the Extended Data
+
+
+How to run the SSM validation procedure:
+
+1. Run fast_cart_fastrelax.xml on your SSM parent designs. Typically 3 replicates are performed and the designs with the best
+    score are used. Rename these designs back to their original names (delete the _0001)
+
+A typical command might look like this:
+   $ROSETTA/bin/rosetta_scripts -beta_nov16 -s parent_pdb.pdb -parser:protocol fast_cart_fastrelax.xml -nstruct 3
+
+2. Produce all of the mutations by running make_all_ssm_mutations.py
+
+A typical command might look like this:
+   ./make_all_ssm_mutations.py relaxed_parent.pdb
+
+Collect all the results by catting the produced silent files together. ( cat *.silent > collected.silent )
+
+
+3. Run the ssm_relax_then_score.xml on all of the produced structures. Typically 3 replicates are performed for robust data
+
+Borrowing some scripts from the cao_2021_protocol, this command could look like this.
+
+echo "-beta_nov16" > validation.flags
+mkdir validation_splits
+cd validation_splits
+silentsplitshuf ../collected.silent 100
+cd ..
+find $(pwd)/validation_splits -name '*.silent' > validation_splits.list
+
+$CAO_2021_PROTOCOL/prepare_run.py -xml ssm_relax_then_score.xml -silent_list validation_splits.list -flags_file validation.flags -rosetta_scripts $ROSETTA/bin/rosetta_scripts -flags="-nstruct 3"
+
+
+Collecting the scorefiles would then look like this:
+
+cat ssm_relax_then_score/*/out.silent > ssm_relax_then_score_combined.silent
+silentscorefile ssm_relax_then_score_combined.silent
+
+
+
+4. You should ensure that you have run your experimental results through ngs_analysis_scripts/estimate_affinity_from_ngs.py
+
+
+5. The final step to run the validation procedure just involves running ngs_analysis_scripts/ssm_stuff/ssm_validation.py . 
+     Hopefully the inputs to that command are clear, here's what an example command could look like:
+
+./ssm_validation.py ../../sorting_ngs_data/VirB8_ssm/pooled_counts.list ../../sorting_ngs_data/VirB8_ssm/sorts.csv ../../ngs_analysis/affinities/VirB8_ssm.sc ../../ngs_analysis/ssm_validation/ssm_relax_then_score_nstruct3.sc ../../design_models_ssm_natives/VirB8_ssm/*.pdb
+
+
+
+6. Finally, in the output from that script, you will get a file with two important columns: p_rosetta and p_entropy. These are the
+    validation metrics reported in the paper. We found that 1e-6 is a pretty good cutoff for deciding whether or not to call a structure "validated"
+
+
+
+

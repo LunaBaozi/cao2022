@@ -1,0 +1,247 @@
+
+
+<ROSETTASCRIPTS>
+
+    <SCOREFXNS>
+
+        <ScoreFunction name="sfxn_16" weights="beta_nov16" />
+
+        <ScoreFunction name="sfxn" weights="beta_nov16" >
+            <Reweight scoretype="approximate_buried_unsat_penalty" weight="5" />
+            <Set approximate_buried_unsat_penalty_burial_atomic_depth="3.5" />
+            <Set approximate_buried_unsat_penalty_hbond_energy_threshold="-0.5" />
+            <Set approximate_buried_unsat_penalty_natural_corrections1="true" />
+            <Set approximate_buried_unsat_penalty_assume_const_backbone="false" />
+            <Reweight scoretype="res_type_constraint" weight="1.5" />
+        </ScoreFunction>
+
+        <ScoreFunction name="sfxn_SANDBAG" weights="none" >
+            <Reweight scoretype="res_type_constraint" weight="1.0" />
+        </ScoreFunction>
+    </SCOREFXNS>
+    <RESIDUE_SELECTORS>
+
+        <ResidueName name="pro_and_gly_positions" residue_name3="PRO,GLY" />
+
+        <Layer name="to_design" select_core="false" select_boundary="false" select_surface="true" use_sidechain_neighbors="true" surface_cutoff="4"/>
+        <Not name="not_to_design" selector="to_design" />
+    </RESIDUE_SELECTORS>
+    <RESIDUE_SELECTORS>
+        <!-- Layer Design -->
+        <Layer name="surface" select_core="false" select_boundary="false" select_surface="true" use_sidechain_neighbors="true"/>
+        <Layer name="boundary" select_core="false" select_boundary="true" select_surface="false" use_sidechain_neighbors="true"/>
+        <Layer name="core" select_core="true" select_boundary="false" select_surface="false" use_sidechain_neighbors="true"/>
+        <SecondaryStructure name="sheet" overlap="0" minH="3" minE="2" include_terminal_loops="false" use_dssp="true" ss="E"/>
+        <SecondaryStructure name="entire_loop" overlap="0" minH="3" minE="2" include_terminal_loops="true" use_dssp="true" ss="L"/>
+        <SecondaryStructure name="entire_helix" overlap="0" minH="3" minE="2" include_terminal_loops="false" use_dssp="true" ss="H"/>
+        <And name="helix_cap" selectors="entire_loop">
+            <PrimarySequenceNeighborhood lower="1" upper="0" selector="entire_helix"/>
+        </And>
+        <And name="helix_start" selectors="entire_helix">
+            <PrimarySequenceNeighborhood lower="0" upper="1" selector="helix_cap"/>
+        </And>
+        <And name="helix" selectors="entire_helix">
+            <Not selector="helix_start"/>
+        </And>
+        <And name="loop" selectors="entire_loop">
+            <Not selector="helix_cap"/>
+        </And>
+
+        <And name="helix_tail" selectors="entire_loop">
+            <PrimarySequenceNeighborhood lower="0" upper="1" selector="entire_helix"/>
+        </And>
+        <And name="helix_end" selectors="entire_helix">
+            <PrimarySequenceNeighborhood lower="1" upper="0" selector="helix_tail"/>
+        </And>
+
+
+        <And name="surface_helix_start" selectors="surface,helix_start" />
+        <And name="surface_helix" selectors="surface,helix" />
+        <And name="surface_sheet" selectors="surface,sheet" />
+        <And name="surface_loop" selectors="surface,loop" />
+
+        <And name="boundary_helix_start" selectors="boundary,helix_start" />
+        <And name="boundary_helix" selectors="boundary,helix" />
+        <And name="boundary_sheet" selectors="boundary,sheet" />
+        <And name="boundary_loop" selectors="boundary,loop" />
+
+        <And name="core_helix_start" selectors="core,helix_start" />
+        <And name="core_helix" selectors="core,helix" />
+        <And name="core_sheet" selectors="core,sheet" />
+        <And name="core_loop" selectors="core,loop" />
+
+    </RESIDUE_SELECTORS>
+
+    <TASKOPERATIONS> 
+
+        <OperateOnResidueSubset name="ld1" selector="surface_helix_start" >
+            <RestrictAbsentCanonicalAASRLT aas="DEHKPQR" />
+        </OperateOnResidueSubset>
+        <OperateOnResidueSubset name="ld2" selector="surface_helix" >
+            <RestrictAbsentCanonicalAASRLT aas="EHKQR" />
+        </OperateOnResidueSubset>
+        <OperateOnResidueSubset name="ld3" selector="surface_sheet" >
+            <RestrictAbsentCanonicalAASRLT aas="EHKNQRST" />
+        </OperateOnResidueSubset>
+        <OperateOnResidueSubset name="ld4" selector="surface_loop" >
+            <RestrictAbsentCanonicalAASRLT aas="DEGHKNPQRST" />
+        </OperateOnResidueSubset>
+        <OperateOnResidueSubset name="ld5" selector="boundary_helix_start" >
+            <RestrictAbsentCanonicalAASRLT aas="ADEHIKLMNPQRSTVWY" />
+        </OperateOnResidueSubset>
+        <OperateOnResidueSubset name="ld6" selector="boundary_helix" >
+            <RestrictAbsentCanonicalAASRLT aas="ADEFHIKLMNQRSTVWY" />
+        </OperateOnResidueSubset>
+        <OperateOnResidueSubset name="ld7" selector="boundary_sheet" >
+            <RestrictAbsentCanonicalAASRLT aas="DEFHIKLMNQRSTVWY" />
+        </OperateOnResidueSubset>
+        <OperateOnResidueSubset name="ld8" selector="boundary_loop" >
+            <RestrictAbsentCanonicalAASRLT aas="ADEFGHIKLNPQRSTVWY" />
+        </OperateOnResidueSubset>
+        <OperateOnResidueSubset name="ld9" selector="core_helix_start" >
+            <RestrictAbsentCanonicalAASRLT aas="AFILMPVWY" />
+        </OperateOnResidueSubset>
+        <OperateOnResidueSubset name="ld10" selector="core_helix" >
+            <RestrictAbsentCanonicalAASRLT aas="AFILMVWY" />
+        </OperateOnResidueSubset>
+        <OperateOnResidueSubset name="ld11" selector="core_sheet" >
+            <RestrictAbsentCanonicalAASRLT aas="FILMVWY" />
+        </OperateOnResidueSubset>
+        <OperateOnResidueSubset name="ld12" selector="core_loop" >
+            <RestrictAbsentCanonicalAASRLT aas="AFGILPVWY" />
+        </OperateOnResidueSubset>
+        <OperateOnResidueSubset name="ld13" selector="helix_cap" >
+            <RestrictAbsentCanonicalAASRLT aas="DNST" />
+        </OperateOnResidueSubset>
+
+
+
+    </TASKOPERATIONS>
+    <TASKOPERATIONS>
+
+        <IncludeCurrent name="current" />
+        <LimitAromaChi2 name="limitchi2" chi2max="110" chi2min="70" include_trp="True" />
+        <ExtraRotamersGeneric name="ex1_ex2" ex1="1" ex2aro="1" />
+
+
+        <DisallowIfNonnative name="disallow_GLY" resnum="0" disallow_aas="G" />
+        <DisallowIfNonnative name="disallow_PRO" resnum="0" disallow_aas="P" />
+
+        <OperateOnResidueSubset name="restrict_PRO_GLY" selector="pro_and_gly_positions">
+                <PreventRepackingRLT/>
+        </OperateOnResidueSubset>
+
+
+        <RestrictAbsentCanonicalAAS name="only_SANDBAG" keep_aas="SANDPVG" />
+
+        <ConsensusLoopDesign name="consensus_loop_design" include_adjacent_residues="true"/>
+
+        <LayerDesign name="layer_core_SCN" layer="core" verbose="true" use_sidechain_neighbors="True" core="5.2" />
+
+    </TASKOPERATIONS>
+    <MOVERS>
+
+        <SwitchChainOrder name="chain1onlypre" chain_order="1" />
+        <ScoreMover name="scorepose" scorefxn="sfxn_16" verbose="false" />
+        <ScoreMover name="noop" scorefxn="sfxn_16" verbose="false" />
+        <ParsedProtocol name="chain1only">
+            <Add mover="chain1onlypre" />
+            <Add mover="scorepose" />
+        </ParsedProtocol>
+
+        <SavePoseMover name="save_start" restore_pose="0" reference_name="pose_start" />
+
+
+    </MOVERS>
+    <FILTERS>
+
+        <ResidueCount name="res_count_all" max_residue_count="9999" confidence="0"/>
+
+        
+        <ResidueCount name="AlaCount" residue_types="ALA" max_residue_count="6" confidence="0"/>
+        <ScoreType name="total_score_MBF" scorefxn="sfxn_16" score_type="total_score" threshold="0" confidence="0" />
+        <MoveBeforeFilter name="total_score_monomer" mover="chain1only" filter="total_score_MBF" confidence="0" />
+        <ScoreType name="p_aa_pp_MBF" scorefxn="sfxn_16" score_type="p_aa_pp" threshold="0" confidence="0" />
+        <MoveBeforeFilter name="p_aa_pp_monomer" mover="chain1only" filter="p_aa_pp_MBF" confidence="0" />
+        <ResidueCount name="res_count_MBF" max_residue_count="9999" confidence="0"/>
+        <MoveBeforeFilter name="res_count_monomer" mover="chain1only" filter="res_count_MBF" confidence="0" />
+
+           
+        <CalculatorFilter name="score_per_res" equation="total_score_monomer / res" threshold="-3.5" confidence="0">
+            <Var name="total_score_monomer" filter="total_score_monomer"/>
+            <Var name="res" filter="res_count_monomer"/>
+        </CalculatorFilter>
+
+        <CalculatorFilter name="p_aa_pp_per_res" equation="p_aa_pp_monomer / res" threshold="-3.5" confidence="0">
+            <Var name="p_aa_pp_monomer" filter="p_aa_pp_monomer"/>
+            <Var name="res" filter="res_count_monomer"/>
+        </CalculatorFilter>
+
+        <ScoreType name="fa_atr" scorefxn="sfxn_16" threshold="0" score_type="fa_atr" />
+        <CalculatorFilter name="fa_atr_per_res" equation="fa_atr_score / res" threshold="-5.2" confidence="0">
+                <Var name="fa_atr_score" filter="fa_atr"/>
+                <Var name="res" filter="res_count_all"/>
+        </CalculatorFilter>
+
+        <SSPrediction name="mismatch_probability" confidence="0" cmd="%%runpsipred_single%%" use_probability="1" mismatch_probability="1" use_svm="0" />
+
+        <Rmsd name="rmsd_to_start" reference_name="pose_start" confidence="0" />
+
+
+        <SSShapeComplementarity name="ss_sc" verbose="0" confidence="0" min_sc="0.800" />
+
+        <worst9mer name="worst9mer" confidence="0" rmsd_lookup_threshold="0.01" report_mean_median="true" />
+        <worst9mer name="worst9mer_helix" confidence="0" rmsd_lookup_threshold="0.01" report_mean_median="true" only_helices="true"/>
+
+
+        <ResidueCount name="res_count_core_SCN" task_operations="layer_core_SCN" max_residue_count="9999" confidence="0"/>
+        <CalculatorFilter name="percent_core_SCN" equation="rescount_coreSCN / (rescount3 + 0.01)" threshold="-0.1" confidence="0" >
+            <Var name="rescount3" filter="res_count_all"/>
+            <Var name="rescount_coreSCN" filter="res_count_core_SCN"/>
+        </CalculatorFilter>
+
+        <Time name="timed"/>
+    </FILTERS>
+    <MOVERS>
+        <StructProfileMover name="genProfile" add_csts_to_pose="1" consider_topN_frags="100" eliminate_background="0" ignore_terminal_residue="1" only_loops="0" burialWt="0" RMSthreshold="0.6" />
+
+        <PackRotamersMover name="SANDBAG_pack" scorefxn="sfxn_SANDBAG" task_operations="only_SANDBAG" />
+
+        # Use the old beta nov16 reference weights, but penalize trp by 2, met by 2, tyr by -1, and ala by 4
+        <FastRelax name="FastDesign" disable_design="false" task_operations="limitchi2,disallow_PRO,disallow_GLY,restrict_PRO_GLY,ld1,ld2,ld3,ld4,ld5,ld6,ld7,ld8,ld9,ld10,ld11,ld12,ld13" scorefxn="sfxn" repeats="1" relaxscript="%%CAO_2021_PROTOCOL%%/old_beta_16_ref_2trp_2met_-1tyr_4ala.rosettacon2018.txt" />
+
+    </MOVERS>
+    <APPLY_TO_POSE>
+    </APPLY_TO_POSE>
+    <PROTOCOLS>
+        <Add filter="timed" />
+
+
+        <Add mover="save_start" />
+
+        <Add mover="genProfile" />
+        <Add mover="SANDBAG_pack" /> # See the SFig about fragment quality for info on this. Apparently it really helps
+        <Add mover="FastDesign" /> # Do you need to run FastDesign 5 times? Who knows, it's tradition
+        <Add mover="FastDesign" />
+        <Add mover="FastDesign" />
+        <Add mover="FastDesign" />
+        <Add mover="FastDesign" />
+
+
+        <Add filter="score_per_res" />
+        <Add filter="AlaCount" />
+        <Add filter="res_count_all" />
+        <Add filter="rmsd_to_start" />
+        <Add filter="p_aa_pp_per_res" />
+        <Add filter="fa_atr_per_res" />
+        <Add filter="ss_sc" />
+        <Add filter="mismatch_probability" />
+        <Add filter="worst9mer" />
+        <Add filter="worst9mer_helix" />
+        <Add filter="percent_core_SCN" />
+
+
+        <Add filter="timed" />
+    </PROTOCOLS>
+    <OUTPUT />
+</ROSETTASCRIPTS>
